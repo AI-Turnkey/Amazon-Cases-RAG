@@ -7,7 +7,7 @@ N8N_WEBHOOK_URL = "https://turnkeyproductmanagement.app.n8n.cloud/webhook/986388
 N8N_IMAGE_WEBHOOK_URL = "https://your-n8n-instance.com/webhook/your-image-webhook"
 
 # Flask Configuration
-SECRET_KEY = 'your-secret-key-change-this-in-production'
+SECRET_KEY = 'Turnkey_Amazon_RAG'
 DEBUG = True
 PORT = 5000
 MAX_CHAT_HISTORIES = 10
