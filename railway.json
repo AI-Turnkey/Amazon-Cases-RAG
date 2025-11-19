@@ -1,1 +1,20 @@
+{
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "python app/main.py",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 30
+  }
+}
+```
 
+### **Procfile**
+```
+web: python app/main.py
+```
+
+### **runtime.txt**
+```
+python-3.11.7
