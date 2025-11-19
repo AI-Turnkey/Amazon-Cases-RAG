@@ -8,13 +8,3 @@
     "healthcheckTimeout": 30
   }
 }
-```
-
-### **Procfile**
-```
-web: python app/main.py
-```
-
-### **runtime.txt**
-```
-python-3.11.7
