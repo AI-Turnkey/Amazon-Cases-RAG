@@ -15,9 +15,10 @@ DEBUG = os.environ.get("DEBUG", "False").lower() in ['true', '1', 'yes']
 PORT = int(os.environ.get("PORT", 5000))
 
 # Chat Settings - Optimized for performance
-MAX_CHAT_HISTORIES = int(os.environ.get("MAX_CHAT_HISTORIES", 10))  # Reduced from 50 to 10
-MAX_MESSAGES_PER_CHAT = int(os.environ.get("MAX_MESSAGES_PER_CHAT", 100))  # Limit messages per chat
-MESSAGE_CONTEXT_LIMIT = int(os.environ.get("MESSAGE_CONTEXT_LIMIT", 10))  # Only send last 10 messages as context
+MAX_CHAT_HISTORIES = int(os.environ.get("MAX_CHAT_HISTORIES", 50))  # Reduced from 50 to 10
+MAX_MESSAGES_PER_CHAT = int(os.environ.get("MAX_MESSAGES_PER_CHAT", 10000))  # Limit messages per chat
+MESSAGE_CONTEXT_LIMIT = int(os.environ.get("MESSAGE_CONTEXT_LIMIT", 50))  # Only send last 10 messages as context
+
 
 # Session configuration
 PERMANENT_SESSION_LIFETIME = timedelta(days=7)
@@ -27,8 +28,8 @@ MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file upload
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 # Performance settings
-DATABASE_CLEANUP_INTERVAL = int(os.environ.get("DATABASE_CLEANUP_INTERVAL", 24))  # Hours between cleanup
-MAX_TOTAL_CHATS_PER_USER = int(os.environ.get("MAX_TOTAL_CHATS_PER_USER", 20))  # Total chats per user
+DATABASE_CLEANUP_INTERVAL = int(os.environ.get("DATABASE_CLEANUP_INTERVAL", 2400))  # Hours between cleanup
+MAX_TOTAL_CHATS_PER_USER = int(os.environ.get("MAX_TOTAL_CHATS_PER_USER", 2000))  # Total chats per user
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
