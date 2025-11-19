@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TurnKey AI Assistant - Login</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #1d4ed8 100%);
+            min-height: 100vh; display: flex; align-items: center; justify-content: center;
+            position: relative; overflow: hidden;
+        }
+        
+        /* Background Pattern */
+        body::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: url('data:image/svg+xml,<svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"><g fill="none" fill-rule="evenodd"><g fill="%23ffffff" fill-opacity="0.05"><path d="M30 30c0-5.5 4.5-10 10-10s10 4.5 10 10-4.5 10-10-10-10 4.5-10 10zm10-20c-5.5 0-10 4.5-10 10s4.5 10 10 10 10-4.5 10-10-4.5-10-10-10z"/></g></g></svg>');
+        }
+        
+        .login-container {
+            background: white; padding: 3rem; border-radius: 24px; 
+            box-shadow: 0 25px 50px rgba(0,0,0,0.15);
+            width: 100%; max-width: 480px; z-index: 1; position: relative;
+        }
+        
+        .brand-header {
+            text-align: center; margin-bottom: 2.5rem;
+        }
+        
+        /* Dark blue background for logo */
+        .logo-container {
+            background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%);
+            margin: -3rem -3rem 2rem -3rem; /* Extend to container edges */
+            padding: 2rem 3rem;
+            border-radius: 24px 24px 0 0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        /* Add subtle pattern to logo background */
+        .logo-container::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: url('data:image/svg+xml,<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><g fill="none" fill-rule="evenodd"><g fill="%23ffffff" fill-opacity="0.05"><circle cx="20" cy="20" r="2"/></g></g></svg>');
+        }
+        
+        .logo {
+            width: 220px; height: auto; margin: 0 auto;
+            filter: brightness(1.1) drop-shadow(0 2px 8px rgba(0,0,0,0.2));
+            display: block; position: relative; z-index: 1;
+        }
+        
+        .logo-fallback {
+            display: none;
+            font-size: 36px; font-weight: 800; color: white;
+            text-align: center; margin: 0;
+            letter-spacing: 3px; position: relative; z-index: 1;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .brand-title {
+            color: #1e3a8a; font-size: 28px; font-weight: 700; margin-bottom: 0.5rem;
+            margin-top: 1.5rem; /* Add space after logo container */
+        }
+        
+        .brand-subtitle {
+            color: #64748b; font-size: 16px; font-weight: 400;
+        }
+        
+        .login-header { text-align: center; margin-bottom: 2.5rem; }
+        .login-header h1 { 
+            color: #1e2937; font-size: 24px; margin-bottom: 0.5rem; font-weight: 600;
+        }
+        .login-header p { color: #6b7280; font-size: 15px; }
+        
+        .form-group { margin-bottom: 1.5rem; }
+        .form-group label { 
+            display: block; margin-bottom: 0.75rem; color: #374151; 
+            font-weight: 500; font-size: 14px;
+        }
+        .form-group input {
+            width: 100%; padding: 16px 20px; border: 2px solid #e5e7eb; 
+            border-radius: 12px; font-size: 16px; transition: all 0.2s ease;
+            background: #fafafa;
+        }
+        .form-group input:focus { 
+            outline: none; border-color: #3b82f6; background: white;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .btn {
+            width: 100%; background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            color: white; border: none; padding: 16px; border-radius: 12px; 
+            font-size: 16px; font-weight: 600; cursor: pointer; 
+            transition: all 0.2s ease; position: relative; overflow: hidden;
+        }
+        .btn:hover { 
+            transform: translateY(-1px); 
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.3);
+        }
+        .btn:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
+        
+        .toggle-auth { text-align: center; margin-top: 2rem; }
+        .toggle-auth span { color: #6b7280; font-size: 14px; }
+        .toggle-auth a { 
+            color: #3b82f6; text-decoration: none; font-weight: 500; 
+            cursor: pointer; margin-left: 4px;
+        }
+        .toggle-auth a:hover { text-decoration: underline; color: #1d4ed8; }
+        
+        .alert { padding: 16px; border-radius: 12px; margin-bottom: 1.5rem; font-size: 14px; }
+        .error { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+        .success { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+        
+        .loading { display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .spinner { 
+            width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.3); 
+            border-top: 2px solid white; border-radius: 50%; 
+            animation: spin 1s linear infinite; 
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .footer-text {
+            text-align: center; margin-top: 2rem; color: #9ca3af; font-size: 12px;
+        }
+        
+        @media (max-width: 480px) {
+            .login-container { padding: 2rem; margin: 1rem; }
+            .logo-container { 
+                margin: -2rem -2rem 1.5rem -2rem; 
+                padding: 1.5rem 2rem;
+            }
+            .logo { width: 180px; }
+            .logo-fallback { font-size: 28px; letter-spacing: 2px; }
+            .brand-title { font-size: 24px; margin-top: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="brand-header">
+            <div class="logo-container">
+                <img src="https://www.turnkeyproductmanagement.com/wp-content/uploads/2023/04/Logo-Full-Color-Dark-BG@0.5x-225x99.png" 
+                     alt="TurnKey Product Management" class="logo" 
+                     onerror="this.style.display='none'; document.querySelector('.logo-fallback').style.display='block';">
+                <div class="logo-fallback">TURNKEY</div>
+            </div>
+            <div class="brand-title">AI Assistant</div>
+            <div class="brand-subtitle">Powered by TurnKey Product Management</div>
+        </div>
+
+        <div class="login-header">
+            <h1 id="auth-title">Welcome Back</h1>
+            <p id="auth-subtitle">Sign in to access your AI assistant</p>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert {{ 'success' if category == 'success' else 'error' }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <form id="auth-form" method="POST" action="/login">
+            <div id="name-group" class="form-group" style="display: none;">
+                <label for="full_name">Full Name</label>
+                <input type="text" id="full_name" name="full_name" placeholder="Enter your full name">
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" name="email" required 
+                       placeholder="Enter your email" value="{{ request.form.email or '' }}">
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required 
+                       minlength="6" placeholder="Enter your password">
+            </div>
+
+            <button type="submit" class="btn" id="auth-btn">Sign In</button>
+        </form>
+
+        <div class="toggle-auth">
+            <span id="toggle-text">Don't have an account?</span>
+            <a id="toggle-link" onclick="toggleAuthMode()">Create Account</a>
+        </div>
+
+        <div class="footer-text">
+            Secure authentication powered by industry-standard encryption
+        </div>
+    </div>
+
+    <script>
+        let isSignUp = false;
+        let isSubmitting = false;
+
+        function toggleAuthMode() {
+            if (isSubmitting) return;
+            
+            isSignUp = !isSignUp;
+            
+            const form = document.getElementById('auth-form');
+            const title = document.getElementById('auth-title');
+            const subtitle = document.getElementById('auth-subtitle');
+            const nameGroup = document.getElementById('name-group');
+            const nameInput = document.getElementById('full_name');
+            const authBtn = document.getElementById('auth-btn');
+            const toggleText = document.getElementById('toggle-text');
+            const toggleLink = document.getElementById('toggle-link');
+            
+            if (isSignUp) {
+                form.action = '/signup';
+                title.textContent = 'Create Account';
+                subtitle.textContent = 'Join TurnKey AI Assistant';
+                nameGroup.style.display = 'block';
+                nameInput.required = true;
+                authBtn.textContent = 'Create Account';
+                toggleText.textContent = 'Already have an account?';
+                toggleLink.textContent = 'Sign In';
+            } else {
+                form.action = '/login';
+                title.textContent = 'Welcome Back';
+                subtitle.textContent = 'Sign in to access your AI assistant';
+                nameGroup.style.display = 'none';
+                nameInput.required = false;
+                authBtn.textContent = 'Sign In';
+                toggleText.textContent = "Don't have an account?";
+                toggleLink.textContent = 'Create Account';
+            }
+        }
+
+        document.getElementById('auth-form').addEventListener('submit', function(e) {
+            if (isSubmitting) {
+                e.preventDefault();
+                return;
+            }
+            
+            isSubmitting = true;
+            const btn = document.getElementById('auth-btn');
+            const originalText = btn.textContent;
+            
+            btn.disabled = true;
+            btn.innerHTML = '<div class="loading"><span class="spinner"></span>Processing...</div>';
+            
+            setTimeout(() => {
+                isSubmitting = false;
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }, 10000);
+        });
+
+        // Try to preload the logo
+        window.addEventListener('load', function() {
+            const img = document.querySelector('.logo');
+            if (img && !img.complete) {
+                img.onerror();
+            }
+        });
+    </script>
+</body>
+</html>
