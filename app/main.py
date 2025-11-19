@@ -5,7 +5,6 @@ import os
 import sys
 from datetime import datetime, timedelta
 import uuid
-from supabase import create_client, Client
 from functools import wraps
 
 # Add parent directory to path for imports
@@ -18,13 +17,25 @@ app = Flask(__name__,
            static_folder='../static')
 app.secret_key = SECRET_KEY
 
-# Initialize Supabase client
+# Initialize Supabase client - FIXED VERSION
 try:
+    from supabase import create_client, Client
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
     print("✅ Supabase client initialized successfully")
 except Exception as e:
     print(f"❌ Error initializing Supabase client: {e}")
     supabase = None
+    # Try alternative initialization
+    try:
+        import os
+        os.environ['SUPABASE_URL'] = SUPABASE_URL
+        os.environ['SUPABASE_KEY'] = SUPABASE_KEY
+        from supabase import create_client
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("✅ Supabase client initialized with alternative method")
+    except Exception as e2:
+        print(f"❌ Alternative Supabase initialization also failed: {e2}")
+        supabase = None
 
 def login_required(f):
     @wraps(f)
@@ -42,21 +53,24 @@ def get_optimized_chat_history(user_id, limit=10):
             
         # Get recent chats
         chats_response = supabase.table('chats').select('*').eq('user_id', user_id).order('updated_at', desc=True).limit(limit).execute()
-        chats = chats_response.data
+        chats = chats_response.data if chats_response.data else []
         
         # For each chat, get only the latest 20 messages to avoid memory overload
         for chat in chats:
             messages_response = supabase.table('messages').select('*').eq('chat_id', chat['id']).order('created_at', desc=True).limit(20).execute()
             # Reverse to get chronological order
-            chat['messages'] = list(reversed(messages_response.data))
+            chat['messages'] = list(reversed(messages_response.data if messages_response.data else []))
             
         return chats
     except Exception as e:
         print(f"❌ Error getting optimized chat history: {e}")
         return []
 
-def cleanup_old_chats(user_id, keep_count=MAX_CHAT_HISTORIES):
+def cleanup_old_chats(user_id, keep_count=None):
     """Clean up old chats to prevent database bloat"""
+    if keep_count is None:
+        keep_count = getattr(sys.modules[__name__], 'MAX_CHAT_HISTORIES', 10)
+    
     try:
         if not supabase:
             return
@@ -64,7 +78,7 @@ def cleanup_old_chats(user_id, keep_count=MAX_CHAT_HISTORIES):
         # Get all user chats ordered by update time
         all_chats = supabase.table('chats').select('*').eq('user_id', user_id).order('updated_at', desc=True).execute()
         
-        if len(all_chats.data) > keep_count:
+        if all_chats.data and len(all_chats.data) > keep_count:
             # Delete oldest chats beyond the limit
             chats_to_delete = all_chats.data[keep_count:]
             
@@ -82,11 +96,31 @@ def cleanup_old_chats(user_id, keep_count=MAX_CHAT_HISTORIES):
 # Health check endpoint for Railway
 @app.route('/health')
 def health_check():
-    return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
-        'supabase_connected': supabase is not None
-    }), 200
+    try:
+        # Test database connection
+        db_status = False
+        if supabase:
+            try:
+                # Simple ping to test connection
+                result = supabase.table('chats').select('id').limit(1).execute()
+                db_status = True
+            except:
+                db_status = False
+        
+        status_code = 200 if db_status else 503
+        return jsonify({
+            'status': 'healthy' if db_status else 'unhealthy',
+            'timestamp': datetime.now().isoformat(),
+            'supabase_connected': db_status,
+            'environment': os.environ.get('RAILWAY_ENVIRONMENT_NAME', 'development')
+        }), status_code
+    except Exception as e:
+        print(f"Health check error: {e}")
+        return jsonify({
+            'status': 'error',
+            'timestamp': datetime.now().isoformat(),
+            'error': str(e)
+        }), 503
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -111,7 +145,8 @@ def login():
                     'id': response.user.id,
                     'email': response.user.email
                 }
-                session['access_token'] = response.session.access_token
+                if hasattr(response, 'session') and response.session:
+                    session['access_token'] = response.session.access_token
                 print(f"✅ Login successful for: {email}")
                 return redirect(url_for('index'))
             else:
@@ -184,7 +219,8 @@ def index():
         cleanup_old_chats(user_id)
         
         # Get optimized chat history
-        chats = get_optimized_chat_history(user_id, MAX_CHAT_HISTORIES)
+        max_histories = getattr(sys.modules[__name__], 'MAX_CHAT_HISTORIES', 10)
+        chats = get_optimized_chat_history(user_id, max_histories)
         
         print(f"📊 Found {len(chats)} chats for user {user_id}")
         
@@ -295,9 +331,10 @@ Please analyze the attached image and respond to the user's message in context.
         
         # Build conversation context
         conversation_context = []
-        for msg in reversed(recent_messages.data[:-1]):  # Exclude the current message
-            role = "User" if msg['role'] == 'user' else "Assistant"
-            conversation_context.append(f"{role}: {msg['content']}")
+        if recent_messages.data:
+            for msg in reversed(recent_messages.data[:-1]):  # Exclude the current message
+                role = "User" if msg['role'] == 'user' else "Assistant"
+                conversation_context.append(f"{role}: {msg['content']}")
         
         context_text = "\n".join(conversation_context) if conversation_context else "This is the start of the conversation."
         
@@ -311,43 +348,49 @@ Please analyze the attached image and respond to the user's message in context.
         }
         
         # Send to N8N webhook
+        bot_message = "I'm sorry, I'm having trouble connecting to the AI service right now."
+        
         try:
-            main_response = requests.post(
-                N8N_WEBHOOK_URL,
-                json=main_payload,
-                headers={'Content-Type': 'application/json'},
-                timeout=60
-            )
-            
-            print(f"📨 N8N Response Status: {main_response.status_code}")
-            
-            if main_response.status_code == 200:
-                try:
-                    response_text = main_response.text.strip()
-                    
+            webhook_url = getattr(sys.modules[__name__], 'N8N_WEBHOOK_URL', None)
+            if webhook_url:
+                main_response = requests.post(
+                    webhook_url,
+                    json=main_payload,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=60
+                )
+                
+                print(f"📨 N8N Response Status: {main_response.status_code}")
+                
+                if main_response.status_code == 200:
                     try:
-                        response_data = main_response.json()
-                        if isinstance(response_data, str):
-                            bot_message = response_data
-                        elif isinstance(response_data, dict):
-                            bot_message = (
-                                response_data.get('output') or
-                                response_data.get('response') or
-                                response_data.get('message') or 
-                                response_data.get('text') or
-                                str(response_data)
-                            )
-                        else:
-                            bot_message = str(response_data)
-                    except json.JSONDecodeError:
-                        bot_message = response_text
+                        response_text = main_response.text.strip()
                         
-                except Exception as parse_error:
-                    print(f"❌ Error processing response: {parse_error}")
-                    bot_message = f'Error processing AI response: {str(parse_error)}'
-                    
+                        try:
+                            response_data = main_response.json()
+                            if isinstance(response_data, str):
+                                bot_message = response_data
+                            elif isinstance(response_data, dict):
+                                bot_message = (
+                                    response_data.get('output') or
+                                    response_data.get('response') or
+                                    response_data.get('message') or 
+                                    response_data.get('text') or
+                                    str(response_data)
+                                )
+                            else:
+                                bot_message = str(response_data)
+                        except json.JSONDecodeError:
+                            bot_message = response_text if response_text else "Empty response from AI service."
+                            
+                    except Exception as parse_error:
+                        print(f"❌ Error processing response: {parse_error}")
+                        bot_message = f'Error processing AI response: {str(parse_error)}'
+                        
+                else:
+                    bot_message = f'AI service returned status {main_response.status_code}.'
             else:
-                bot_message = f'AI service returned status {main_response.status_code}.'
+                bot_message = "AI webhook URL not configured."
         
         except Exception as e:
             print(f"❌ Webhook error: {e}")
@@ -423,7 +466,7 @@ def load_chat(chat_id):
         # Get messages for this chat (limit to recent 30 for performance)
         messages_response = supabase.table('messages').select('*').eq('chat_id', chat_id).order('created_at').limit(30).execute()
         
-        chat['messages'] = messages_response.data
+        chat['messages'] = messages_response.data if messages_response.data else []
         session['current_chat_id'] = chat_id
         
         print(f"📖 Loaded chat {chat_id} with {len(chat['messages'])} messages")
@@ -442,10 +485,11 @@ def get_chat_histories():
     
     try:
         user_id = session['user']['id']
+        max_histories = getattr(sys.modules[__name__], 'MAX_CHAT_HISTORIES', 10)
         
-        chats_response = supabase.table('chats').select('*').eq('user_id', user_id).order('updated_at', desc=True).limit(MAX_CHAT_HISTORIES).execute()
+        chats_response = supabase.table('chats').select('*').eq('user_id', user_id).order('updated_at', desc=True).limit(max_histories).execute()
         
-        return jsonify(chats_response.data)
+        return jsonify(chats_response.data if chats_response.data else [])
         
     except Exception as e:
         print(f"❌ Error getting chat histories: {e}")
@@ -470,15 +514,16 @@ def delete_chat(chat_id):
         messages_with_images = supabase.table('messages').select('*').eq('chat_id', chat_id).eq('has_image', True).execute()
         
         # Delete images from storage
-        for message in messages_with_images.data:
-            if message.get('image_url'):
-                try:
-                    # Extract filename from URL and delete from storage
-                    filename = message['image_url'].split('/')[-1]
-                    supabase.storage.from_("chat-images").remove([filename])
-                    print(f"🗑️ Deleted image from storage: {filename}")
-                except Exception as storage_error:
-                    print(f"⚠️ Could not delete image from storage: {storage_error}")
+        if messages_with_images.data:
+            for message in messages_with_images.data:
+                if message.get('image_url'):
+                    try:
+                        # Extract filename from URL and delete from storage
+                        filename = message['image_url'].split('/')[-1]
+                        supabase.storage.from_("chat-images").remove([filename])
+                        print(f"🗑️ Deleted image from storage: {filename}")
+                    except Exception as storage_error:
+                        print(f"⚠️ Could not delete image from storage: {storage_error}")
         
         # Delete all messages in the chat
         supabase.table('messages').delete().eq('chat_id', chat_id).execute()
@@ -495,9 +540,14 @@ def delete_chat(chat_id):
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", PORT))
+    port = int(os.environ.get("PORT", 5000))
     print(f"🚀 Starting Flask application on port {port}...")
-    print(f"🔧 Debug mode: {DEBUG}")
+    print(f"🔧 Debug mode: {DEBUG if 'DEBUG' in globals() else False}")
     print(f"🌐 Host: 0.0.0.0")
     print(f"🗄️ Supabase Connected: {'✅ Yes' if supabase else '❌ No'}")
-    app.run(debug=DEBUG, host='0.0.0.0', port=port)
+    app.run(debug=False, host='0.0.0.0', port=port)
+```
+
+## 🔧 **Updated Procfile** (Use Gunicorn)
+```
+web: gunicorn --bind 0.0.0.0:$PORT app.main:app --timeout 120 --workers 1
