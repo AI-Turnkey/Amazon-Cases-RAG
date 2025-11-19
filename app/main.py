@@ -2,10 +2,15 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 import requests
 import json
 import os
+import sys
 from datetime import datetime, timedelta
 import uuid
 from supabase import create_client, Client
 from functools import wraps
+
+# Add parent directory to path for imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from config import *
 
 app = Flask(__name__, 
@@ -25,13 +30,16 @@ def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user' not in session:
-            return redirect(url_for('auth.login'))
+            return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
 
 def get_optimized_chat_history(user_id, limit=10):
     """Get optimized chat history with pagination and message limiting"""
     try:
+        if not supabase:
+            return []
+            
         # Get recent chats
         chats_response = supabase.table('chats').select('*').eq('user_id', user_id).order('updated_at', desc=True).limit(limit).execute()
         chats = chats_response.data
@@ -50,6 +58,9 @@ def get_optimized_chat_history(user_id, limit=10):
 def cleanup_old_chats(user_id, keep_count=MAX_CHAT_HISTORIES):
     """Clean up old chats to prevent database bloat"""
     try:
+        if not supabase:
+            return
+            
         # Get all user chats ordered by update time
         all_chats = supabase.table('chats').select('*').eq('user_id', user_id).order('updated_at', desc=True).execute()
         
@@ -75,14 +86,96 @@ def health_check():
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
         'supabase_connected': supabase is not None
-    })
+    }), 200
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+        
+        print(f"🔐 Login attempt for: {email}")
+        
+        if not supabase:
+            flash('Database connection error', 'error')
+            return render_template('login.html')
+        
+        try:
+            response = supabase.auth.sign_in_with_password({
+                "email": email,
+                "password": password
+            })
+            
+            if response.user:
+                session['user'] = {
+                    'id': response.user.id,
+                    'email': response.user.email
+                }
+                session['access_token'] = response.session.access_token
+                print(f"✅ Login successful for: {email}")
+                return redirect(url_for('index'))
+            else:
+                print(f"❌ Login failed - no user returned")
+                flash('Invalid credentials', 'error')
+                
+        except Exception as e:
+            print(f"❌ Login error: {str(e)}")
+            flash(f'Login error: {str(e)}', 'error')
+    
+    return render_template('login.html')
+
+@app.route('/signup', methods=['POST'])
+def signup():
+    email = request.form['email']
+    password = request.form['password']
+    full_name = request.form['full_name']
+    
+    print(f"📝 Signup attempt for: {email}")
+    
+    if not supabase:
+        flash('Database connection error', 'error')
+        return render_template('login.html')
+    
+    try:
+        response = supabase.auth.sign_up({
+            "email": email,
+            "password": password,
+            "options": {
+                "data": {
+                    "full_name": full_name
+                }
+            }
+        })
+        
+        if response.user:
+            flash('Account created successfully! You can now sign in.', 'success')
+            print(f"✅ Signup successful for: {email}")
+        else:
+            flash('Error creating account', 'error')
+            print(f"❌ Signup failed - no user returned")
+            
+    except Exception as e:
+        print(f"❌ Signup error: {str(e)}")
+        flash(f'Signup error: {str(e)}', 'error')
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    try:
+        if supabase:
+            supabase.auth.sign_out()
+    except Exception as e:
+        print(f"Logout error: {e}")
+    session.clear()
+    return redirect(url_for('login'))
 
 @app.route('/')
 @login_required
 def index():
     if not supabase:
         flash('Database connection error', 'error')
-        return redirect(url_for('auth.logout'))
+        return redirect(url_for('logout'))
     
     user_id = session['user']['id']
     
@@ -120,7 +213,7 @@ def index():
     except Exception as e:
         print(f"❌ Database error in index: {e}")
         flash('Error loading chats', 'error')
-        return redirect(url_for('auth.logout'))
+        return redirect(url_for('logout'))
 
 @app.route('/send_message', methods=['POST'])
 @login_required
@@ -285,14 +378,126 @@ Please analyze the attached image and respond to the user's message in context.
         print(f"❌ Error in send_message: {e}")
         return jsonify({'error': str(e)}), 500
 
-# Import auth routes
-from app.auth import auth_bp
-app.register_blueprint(auth_bp)
+@app.route('/new_chat', methods=['POST'])
+@login_required
+def new_chat():
+    if not supabase:
+        return jsonify({'error': 'Database connection error'}), 500
+    
+    try:
+        user_id = session['user']['id']
+        
+        new_chat_response = supabase.table('chats').insert({
+            'user_id': user_id,
+            'title': f"Chat {datetime.now().strftime('%H:%M')}"
+        }).execute()
+        
+        new_chat = new_chat_response.data[0]
+        session['current_chat_id'] = new_chat['id']
+        
+        return jsonify({
+            'chat_id': new_chat['id'],
+            'title': new_chat['title']
+        })
+        
+    except Exception as e:
+        print(f"❌ Error creating new chat: {e}")
+        return jsonify({'error': str(e)}), 500
 
-# Import chat routes
-from app.chat import chat_bp
-app.register_blueprint(chat_bp)
+@app.route('/load_chat/<chat_id>')
+@login_required
+def load_chat(chat_id):
+    if not supabase:
+        return jsonify({'error': 'Database connection error'}), 500
+    
+    try:
+        user_id = session['user']['id']
+        
+        chat_response = supabase.table('chats').select('*').eq('id', chat_id).eq('user_id', user_id).execute()
+        
+        if not chat_response.data:
+            return jsonify({'error': 'Chat not found'}), 404
+        
+        chat = chat_response.data[0]
+        
+        # Get messages for this chat (limit to recent 30 for performance)
+        messages_response = supabase.table('messages').select('*').eq('chat_id', chat_id).order('created_at').limit(30).execute()
+        
+        chat['messages'] = messages_response.data
+        session['current_chat_id'] = chat_id
+        
+        print(f"📖 Loaded chat {chat_id} with {len(chat['messages'])} messages")
+        
+        return jsonify(chat)
+        
+    except Exception as e:
+        print(f"❌ Error loading chat: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get_chat_histories')
+@login_required
+def get_chat_histories():
+    if not supabase:
+        return jsonify({'error': 'Database connection error'}), 500
+    
+    try:
+        user_id = session['user']['id']
+        
+        chats_response = supabase.table('chats').select('*').eq('user_id', user_id).order('updated_at', desc=True).limit(MAX_CHAT_HISTORIES).execute()
+        
+        return jsonify(chats_response.data)
+        
+    except Exception as e:
+        print(f"❌ Error getting chat histories: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/delete_chat/<chat_id>', methods=['DELETE'])
+@login_required
+def delete_chat(chat_id):
+    if not supabase:
+        return jsonify({'error': 'Database connection error'}), 500
+    
+    try:
+        user_id = session['user']['id']
+        
+        # Verify chat belongs to user
+        chat_response = supabase.table('chats').select('*').eq('id', chat_id).eq('user_id', user_id).execute()
+        
+        if not chat_response.data:
+            return jsonify({'error': 'Chat not found'}), 404
+        
+        # Get messages with images to clean up storage
+        messages_with_images = supabase.table('messages').select('*').eq('chat_id', chat_id).eq('has_image', True).execute()
+        
+        # Delete images from storage
+        for message in messages_with_images.data:
+            if message.get('image_url'):
+                try:
+                    # Extract filename from URL and delete from storage
+                    filename = message['image_url'].split('/')[-1]
+                    supabase.storage.from_("chat-images").remove([filename])
+                    print(f"🗑️ Deleted image from storage: {filename}")
+                except Exception as storage_error:
+                    print(f"⚠️ Could not delete image from storage: {storage_error}")
+        
+        # Delete all messages in the chat
+        supabase.table('messages').delete().eq('chat_id', chat_id).execute()
+        
+        # Delete the chat
+        supabase.table('chats').delete().eq('id', chat_id).execute()
+        
+        print(f"🗑️ Deleted chat {chat_id} for user {user_id}")
+        
+        return jsonify({'success': True, 'message': 'Chat deleted successfully'})
+        
+    except Exception as e:
+        print(f"❌ Error deleting chat: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", PORT))
+    print(f"🚀 Starting Flask application on port {port}...")
+    print(f"🔧 Debug mode: {DEBUG}")
+    print(f"🌐 Host: 0.0.0.0")
+    print(f"🗄️ Supabase Connected: {'✅ Yes' if supabase else '❌ No'}")
     app.run(debug=DEBUG, host='0.0.0.0', port=port)
